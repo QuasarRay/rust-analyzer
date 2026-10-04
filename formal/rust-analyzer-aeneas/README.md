@@ -81,6 +81,13 @@ Aeneas still names its Rocq-compatible backend `coq`; this pipeline keeps that
 upstream backend name and stores its generated `.v` source under `generated/coq/`.
 No Rocq or HOL4 checker is invoked.
 
+Compatibility here is a producer/consumer contract guarantee: rust-analyzer emits
+the exact LLBC serialization produced by the Charon revision pinned by Aeneas,
+and the smoke test verifies that the matching Aeneas binary imports it. This
+does not expand Aeneas's supported Rust subset; if Aeneas itself does not
+support a Rust construct after importing valid LLBC, this integration leaves
+that limitation unchanged.
+
 Each sweep attempts every available unit and backend. Unsupported Rust features
 or extraction failures are recorded in JSON manifests and per-unit logs rather
 than being repaired with new models or proofs.
