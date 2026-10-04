@@ -2,6 +2,11 @@ name: Generate Charon/Aeneas machine documentation
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - formal/04-generated-docs-run
+    paths:
+      - '.github/formal-translation.trigger'
 
 permissions:
   contents: write
