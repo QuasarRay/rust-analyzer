@@ -126,7 +126,7 @@ than a rust-analyzer-specific approximation.
 
 Tool selection is strict:
 
-1. `--charon-bin /path/to/charon` is accepted only when `charon --version`
+1. `--charon-bin /path/to/charon` is accepted only when `charon version`
    reports the pinned Charon commit.
 2. `RA_CHARON` behaves the same way.
 3. A matching `charon` on `PATH` is used automatically.
