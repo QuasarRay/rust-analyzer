@@ -58,7 +58,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          scripts/formal/generate-e2e.sh
+          bash scripts/formal/generate-e2e.sh
           status=$?
           set -e
           echo "status=${status}" >> "${GITHUB_OUTPUT}"
