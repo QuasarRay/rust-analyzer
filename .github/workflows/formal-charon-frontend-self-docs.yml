@@ -1,10 +1,10 @@
-name: Generate Charon-enabled rust-analyzer self-docs
+name: Generate Charon-enabled rust-analyzer core self-docs
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - formal/05-charon-frontend-self-docs
+      - formal/05-charon-frontend-self-docs-core
     paths:
       - '.github/charon-frontend-self-docs.trigger'
 
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   generate:
-    name: Generate dedicated LLBC, Rocq/Coq, and HOL4
+    name: Generate rust-analyzer LLBC, Rocq/Coq, and HOL4
     runs-on: ubuntu-latest
     steps:
       - name: Checkout selected branch
