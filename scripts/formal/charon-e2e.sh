@@ -8,9 +8,10 @@ CHARON_BIN="${CHARON_BIN:-charon}"
 artifact_root="${FORMAL_ARTIFACT_ROOT:-$repo_root/formal/rust-analyzer-aeneas/generated}"
 llbc_dir="$artifact_root/llbc"
 manifest_dir="$artifact_root/manifests"
+log_dir="$artifact_root/logs/charon"
 scratch_root="${FORMAL_SCRATCH_ROOT:-${TMPDIR:-/tmp}/rust-analyzer-charon}"
 
-for tool in cargo git jq sha256sum "$CHARON_BIN"; do
+for tool in cargo git jq sha256sum base64 awk tr date "$CHARON_BIN"; do
   if [[ "$tool" == */* ]]; then
     [[ -x "$tool" ]] || { echo "missing executable: $tool" >&2; exit 127; }
   else
@@ -18,8 +19,8 @@ for tool in cargo git jq sha256sum "$CHARON_BIN"; do
   fi
 done
 
-rm -rf "$llbc_dir" "$scratch_root"
-mkdir -p "$llbc_dir" "$manifest_dir" "$scratch_root"
+rm -rf "$llbc_dir" "$log_dir" "$scratch_root"
+mkdir -p "$llbc_dir" "$manifest_dir" "$log_dir" "$scratch_root"
 
 metadata_file="$scratch_root/cargo-metadata.json"
 units_jsonl="$scratch_root/units.jsonl"
@@ -36,6 +37,8 @@ sanitize() {
 emit_unit() {
   jq -nc "$@" >> "$units_jsonl"
 }
+
+failures=0
 
 mapfile -t packages < <(
   jq -r '
@@ -78,49 +81,116 @@ for package_b64 in "${packages[@]}"; do
         selector=(--bench "$target_name")
         ;;
       custom-build)
-        emit_unit           --arg package "$package_name"           --arg package_id "$package_id"           --arg target "$target_name"           --arg kind "$target_kind"           --arg source "$target_src"           '{package:$package,package_id:$package_id,target:$target,kind:$kind,source:$source,status:"recorded-not-standalone-selectable"}'
+        emit_unit \
+          --arg package "$package_name" \
+          --arg package_id "$package_id" \
+          --arg target "$target_name" \
+          --arg kind "$target_kind" \
+          --arg source "$target_src" \
+          '{package:$package,package_id:$package_id,target:$target,kind:$kind,source:$source,status:"recorded-not-standalone-selectable"}'
         continue
         ;;
       *)
-        echo "unsupported Cargo target kind: $target_kind ($package_name/$target_name)" >&2
-        exit 2
+        failures=$((failures + 1))
+        emit_unit \
+          --arg package "$package_name" \
+          --arg package_id "$package_id" \
+          --arg target "$target_name" \
+          --arg kind "$target_kind" \
+          --arg source "$target_src" \
+          '{package:$package,package_id:$package_id,target:$target,kind:$kind,source:$source,status:"unsupported-cargo-target-kind"}'
+        continue
         ;;
     esac
 
-    unit_id="$(sanitize "$package_name__$target_kind__$target_name")"
+    unit_id="$(sanitize "${package_name}__${target_kind}__${target_name}")"
     output="$llbc_dir/$unit_id.llbc"
+    log="$log_dir/$unit_id.log"
     target_dir="$scratch_root/cargo-target/$unit_id"
     mkdir -p "$target_dir"
 
     echo "==> Charon: $package_name [$target_kind:$target_name]"
-    CARGO_TARGET_DIR="$target_dir"       "$CHARON_BIN" cargo         --preset=aeneas         --format=json         --dest-file="$output"         --         --manifest-path "$manifest_path"         "${selector[@]}"
 
-    [[ -s "$output" ]] || {
-      echo "Charon did not produce $output" >&2
-      exit 3
-    }
+    set +e
+    CARGO_TARGET_DIR="$target_dir" "$CHARON_BIN" cargo \
+      --preset=aeneas \
+      --format=json \
+      --dest-file="$output" \
+      -- \
+      --manifest-path "$manifest_path" \
+      "${selector[@]}" >"$log" 2>&1
+    status=$?
+    set -e
+
+    if (( status != 0 )); then
+      failures=$((failures + 1))
+      rm -f "$output"
+      emit_unit \
+        --arg package "$package_name" \
+        --arg package_id "$package_id" \
+        --arg target "$target_name" \
+        --arg kind "$target_kind" \
+        --arg source "$target_src" \
+        --arg log "${log#"$repo_root"/}" \
+        --argjson exit_code "$status" \
+        '{package:$package,package_id:$package_id,target:$target,kind:$kind,source:$source,status:"charon-failed",exit_code:$exit_code,log:$log}'
+      continue
+    fi
+
+    if [[ ! -s "$output" ]]; then
+      failures=$((failures + 1))
+      emit_unit \
+        --arg package "$package_name" \
+        --arg package_id "$package_id" \
+        --arg target "$target_name" \
+        --arg kind "$target_kind" \
+        --arg source "$target_src" \
+        --arg log "${log#"$repo_root"/}" \
+        '{package:$package,package_id:$package_id,target:$target,kind:$kind,source:$source,status:"charon-produced-no-llbc",log:$log}'
+      continue
+    fi
 
     digest="$(sha256sum "$output" | awk '{print $1}')"
-    emit_unit       --arg package "$package_name"       --arg package_id "$package_id"       --arg target "$target_name"       --arg kind "$target_kind"       --arg source "$target_src"       --arg path "${output#"$repo_root"/}"       --arg sha256 "$digest"       '{package:$package,package_id:$package_id,target:$target,kind:$kind,source:$source,status:"translated",llbc:{path:$path,sha256:$sha256}}'
+    emit_unit \
+      --arg package "$package_name" \
+      --arg package_id "$package_id" \
+      --arg target "$target_name" \
+      --arg kind "$target_kind" \
+      --arg source "$target_src" \
+      --arg path "${output#"$repo_root"/}" \
+      --arg log "${log#"$repo_root"/}" \
+      --arg sha256 "$digest" \
+      '{package:$package,package_id:$package_id,target:$target,kind:$kind,source:$source,status:"translated",llbc:{path:$path,sha256:$sha256},log:$log}'
   done
 done
 
 while IFS= read -r -d '' source_path; do
   digest="$(sha256sum "$source_path" | awk '{print $1}')"
-  jq -nc     --arg path "$source_path"     --arg sha256 "$digest"     '{path:$path,sha256:$sha256}' >> "$source_jsonl"
+  jq -nc \
+    --arg path "$source_path" \
+    --arg sha256 "$digest" \
+    '{path:$path,sha256:$sha256}' >> "$source_jsonl"
 done < <(git ls-files -z -- '*.rs')
 
 source_commit="$(git rev-parse HEAD)"
 generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-jq -s   --arg source_commit "$source_commit"   --arg generated_at "$generated_at"   '{
+jq -s \
+  --arg source_commit "$source_commit" \
+  --arg generated_at "$generated_at" \
+  --argjson failures "$failures" \
+  '{
     schema:"quasarray.rust-analyzer.charon-units.v1",
     source_commit:$source_commit,
     generated_at_utc:$generated_at,
+    failures:$failures,
     units:.
   }' "$units_jsonl" > "$manifest_dir/charon-units.json"
 
-jq -s   --arg source_commit "$source_commit"   --arg generated_at "$generated_at"   '{
+jq -s \
+  --arg source_commit "$source_commit" \
+  --arg generated_at "$generated_at" \
+  '{
     schema:"quasarray.rust-analyzer.rust-source-inventory.v1",
     source_commit:$source_commit,
     generated_at_utc:$generated_at,
@@ -129,3 +199,9 @@ jq -s   --arg source_commit "$source_commit"   --arg generated_at "$generated_at
 
 echo "Charon LLBC: $llbc_dir"
 echo "Manifests:   $manifest_dir"
+echo "Logs:        $log_dir"
+
+if (( failures != 0 )); then
+  echo "Charon sweep completed with $failures failed/unsupported targets; see manifest and logs." >&2
+  exit 4
+fi
