@@ -168,10 +168,10 @@ fn verify_local_charon(path: &Path, strict: bool) -> Result<()> {
 }
 
 fn probe_charon(path: &Path) -> Result<Option<String>> {
-    match Command::new(path).arg("--version").output() {
+    match Command::new(path).arg("version").output() {
         Ok(output) => {
             if !output.status.success() {
-                bail!("{} --version failed with {}", path.display(), output.status);
+                bail!("{} version failed with {}", path.display(), output.status);
             }
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
@@ -180,7 +180,7 @@ fn probe_charon(path: &Path) -> Result<Option<String>> {
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error)
-            .with_context(|| format!("failed to execute {} --version", path.display())),
+            .with_context(|| format!("failed to execute {} version", path.display())),
     }
 }
 
@@ -258,6 +258,15 @@ fn charon_args(input: &Input, output: &Path, compiler_args: &[String]) -> (PathB
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TOOLCHAIN_ENV: &str =
+        include_str!("../../../../formal/rust-analyzer-aeneas/toolchain.env");
+
+    #[test]
+    fn compiled_pins_match_repository_contract() {
+        assert!(TOOLCHAIN_ENV.contains(&format!("AENEAS_REV={AENEAS_REV}")));
+        assert!(TOOLCHAIN_ENV.contains(&format!("CHARON_REV={CHARON_REV}")));
+    }
 
     #[test]
     fn accepts_exact_and_short_charon_commit() {
