@@ -32,31 +32,37 @@ jobs:
             exit 2
           fi
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31.10.6
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create pinned Charon and Aeneas launchers
+      - name: Install exact prebuilt Aeneas and Charon release
         shell: bash
         run: |
           set -euo pipefail
           source formal/rust-analyzer-aeneas/toolchain.env
-          flake="github:AeneasVerif/aeneas/${AENEAS_REV}"
 
-          cat > "${RUNNER_TEMP}/charon-pinned" <<EOF
-          #!/usr/bin/env bash
-          exec nix run --accept-flake-config "${flake}#charon" -- "\$@"
-          EOF
+          archive="${RUNNER_TEMP}/aeneas-release.tar.gz"
+          dist="${RUNNER_TEMP}/aeneas-release"
+          url="https://github.com/AeneasVerif/aeneas/releases/download/${AENEAS_RELEASE_TAG}/aeneas-linux-x86_64.tar.gz"
 
-          cat > "${RUNNER_TEMP}/aeneas-pinned" <<EOF
-          #!/usr/bin/env bash
-          exec nix run --accept-flake-config "${flake}" -- "\$@"
-          EOF
+          curl --fail --location --retry 3 --output "${archive}" "${url}"
+          echo "${AENEAS_LINUX_X86_64_SHA256}  ${archive}" | sha256sum --check -
 
-          chmod +x "${RUNNER_TEMP}/charon-pinned" "${RUNNER_TEMP}/aeneas-pinned"
-          echo "CHARON_BIN=${RUNNER_TEMP}/charon-pinned" >> "${GITHUB_ENV}"
-          echo "AENEAS_BIN=${RUNNER_TEMP}/aeneas-pinned" >> "${GITHUB_ENV}"
+          mkdir -p "${dist}"
+          tar -xzf "${archive}" -C "${dist}"
+          chmod +x "${dist}/aeneas" "${dist}/charon" "${dist}/charon-driver"
+
+          aeneas_version="$("${dist}/aeneas" -version)"
+          [[ "${aeneas_version}" == "aeneas ${AENEAS_RELEASE_TAG}" ]] || {
+            echo "Aeneas release mismatch: ${aeneas_version}" >&2
+            exit 3
+          }
+
+          charon_version="$("${dist}/charon" version)"
+          [[ "${charon_version}" == *"${CHARON_REV}"* || "${charon_version}" == *"${CHARON_REV:0:7}"* ]] || {
+            echo "Charon release mismatch: ${charon_version}; expected ${CHARON_REV}" >&2
+            exit 4
+          }
+
+          echo "CHARON_BIN=${dist}/charon" >> "${GITHUB_ENV}"
+          echo "AENEAS_BIN=${dist}/aeneas" >> "${GITHUB_ENV}"
 
       - name: Generate dedicated self-documentation
         id: generate
