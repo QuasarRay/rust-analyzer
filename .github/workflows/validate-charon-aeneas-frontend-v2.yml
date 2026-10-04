@@ -1,0 +1,41 @@
+name: Validate Charon Aeneas frontend v2
+
+on:
+  push:
+    branches:
+      - validation/charon-aeneas-frontend-v2
+    paths:
+      - '.github/charon-aeneas-frontend-v2.trigger'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update stable
+          rustup default stable
+
+      - name: Check rust-analyzer binary
+        run: cargo check -p rust-analyzer --bin rust-analyzer
+
+      - name: Run Aeneas LLBC frontend unit tests
+        run: cargo test -p rust-analyzer aeneas_llbc --lib
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.10.6
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify automatic pinned-Nix producer contract
+        run: bash scripts/formal/check-rust-analyzer-aeneas-contract.sh
+
+      - name: Verify explicit pinned Charon producer contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          source formal/rust-analyzer-aeneas/toolchain.env
+          charon_out="$(nix build --accept-flake-config --no-link --print-out-paths "github:AeneasVerif/aeneas/${AENEAS_REV}#charon")"
+          RA_CHARON="${charon_out}/bin/charon" bash scripts/formal/check-rust-analyzer-aeneas-contract.sh
