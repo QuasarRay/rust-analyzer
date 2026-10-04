@@ -1,0 +1,94 @@
+name: Generate Charon-enabled rust-analyzer self-docs
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - formal/05-charon-frontend-self-docs
+    paths:
+      - '.github/charon-frontend-self-docs.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: formal-charon-frontend-self-docs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    name: Generate dedicated LLBC, Rocq/Coq, and HOL4
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Require a branch ref
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" != "branch" ]]; then
+            echo "This workflow must run on a branch so generated files can be committed back." >&2
+            exit 2
+          fi
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.10.6
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create pinned Charon and Aeneas launchers
+        shell: bash
+        run: |
+          set -euo pipefail
+          source formal/rust-analyzer-aeneas/toolchain.env
+          flake="github:AeneasVerif/aeneas/${AENEAS_REV}"
+
+          cat > "${RUNNER_TEMP}/charon-pinned" <<EOF
+          #!/usr/bin/env bash
+          exec nix run --accept-flake-config "${flake}#charon" -- "\$@"
+          EOF
+
+          cat > "${RUNNER_TEMP}/aeneas-pinned" <<EOF
+          #!/usr/bin/env bash
+          exec nix run --accept-flake-config "${flake}" -- "\$@"
+          EOF
+
+          chmod +x "${RUNNER_TEMP}/charon-pinned" "${RUNNER_TEMP}/aeneas-pinned"
+          echo "CHARON_BIN=${RUNNER_TEMP}/charon-pinned" >> "${GITHUB_ENV}"
+          echo "AENEAS_BIN=${RUNNER_TEMP}/aeneas-pinned" >> "${GITHUB_ENV}"
+
+      - name: Generate dedicated self-documentation
+        id: generate
+        shell: bash
+        run: |
+          set +e
+          bash scripts/formal/generate-charon-frontend-self-docs.sh
+          status=$?
+          set -e
+          echo "status=${status}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Commit dedicated generated documents
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A formal/rust-analyzer-aeneas/architectures/charon-frontend/generated
+
+          if git diff --cached --quiet; then
+            echo "Dedicated generated documentation is already up to date."
+            exit 0
+          fi
+
+          source_commit="$(git rev-parse --short=12 HEAD)"
+          git commit -m "formal: generate Charon frontend self-docs for ${source_commit}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Report incomplete translation
+        if: steps.generate.outputs.status != '0'
+        shell: bash
+        run: |
+          echo "One or more Charon/Aeneas translations failed. Partial dedicated documents, manifests, and logs were committed." >&2
+          exit "${{ steps.generate.outputs.status }}"
