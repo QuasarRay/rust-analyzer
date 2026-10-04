@@ -215,7 +215,7 @@ fn run_charon(
     };
 
     let (cwd, args) = charon_args(input, output, compiler_args);
-    command.current_dir(cwd).args(args);
+    command.current_dir(&cwd).args(args);
 
     command
         .status()
