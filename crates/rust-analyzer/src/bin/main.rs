@@ -68,6 +68,7 @@ fn actual_main() -> anyhow::Result<ExitCode> {
                 move || run_server(None),
             )?;
         }
+        flags::RustAnalyzerCmd::AeneasLlbc(cmd) => cmd.run()?,
         flags::RustAnalyzerCmd::Parse(cmd) => cmd.run()?,
         flags::RustAnalyzerCmd::Symbols(cmd) => cmd.run()?,
         flags::RustAnalyzerCmd::Highlight(cmd) => cmd.run()?,

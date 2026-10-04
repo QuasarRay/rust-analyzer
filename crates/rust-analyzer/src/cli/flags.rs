@@ -36,6 +36,23 @@ xflags::xflags! {
             optional --print-config-schema
         }
 
+        /// Compile Rust through the exact Charon contract pinned by Aeneas.
+        ///
+        /// Cargo project directories and Cargo.toml files use Charon's Cargo driver.
+        /// Individual .rs files use Charon's rustc driver.
+        cmd aeneas-llbc {
+            required path: PathBuf
+
+            /// Destination LLBC JSON file.
+            required -o, --output output: PathBuf
+
+            /// Charon executable to use. Its commit must match Aeneas's pin.
+            optional --charon-bin charon_bin: PathBuf
+
+            /// Extra argument forwarded after Charon's `--` separator.
+            repeated --compiler-arg compiler_arg: String
+        }
+
         /// Parse stdin.
         cmd parse {
             /// Suppress printing.
@@ -214,6 +231,7 @@ pub struct RustAnalyzer {
 #[derive(Debug)]
 pub enum RustAnalyzerCmd {
     LspServer(LspServer),
+    AeneasLlbc(AeneasLlbc),
     Parse(Parse),
     Symbols(Symbols),
     Highlight(Highlight),
@@ -233,6 +251,14 @@ pub enum RustAnalyzerCmd {
 pub struct LspServer {
     pub version: bool,
     pub print_config_schema: bool,
+}
+
+#[derive(Debug)]
+pub struct AeneasLlbc {
+    pub path: PathBuf,
+    pub output: PathBuf,
+    pub charon_bin: Option<PathBuf>,
+    pub compiler_arg: Vec<String>,
 }
 
 #[derive(Debug)]

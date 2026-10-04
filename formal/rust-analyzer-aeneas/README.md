@@ -81,6 +81,13 @@ Aeneas still names its Rocq-compatible backend `coq`; this pipeline keeps that
 upstream backend name and stores its generated `.v` source under `generated/coq/`.
 No Rocq or HOL4 checker is invoked.
 
+Compatibility here is a producer/consumer contract guarantee: rust-analyzer emits
+the exact LLBC serialization produced by the Charon revision pinned by Aeneas,
+and the smoke test verifies that the matching Aeneas binary imports it. This
+does not expand Aeneas's supported Rust subset; if Aeneas itself does not
+support a Rust construct after importing valid LLBC, this integration leaves
+that limitation unchanged.
+
 Each sweep attempts every available unit and backend. Unsupported Rust features
 or extraction failures are recorded in JSON manifests and per-unit logs rather
 than being repaired with new models or proofs.
@@ -102,3 +109,46 @@ still commits the partial LLBC/Rocq/HOL4 outputs, manifests, and logs before
 reporting a failed workflow result.
 
 The workflow itself is not triggered by pushes or pull requests.
+
+
+## rust-analyzer as an Aeneas-compatible compiler frontend
+
+This branch exposes Charon directly through the rust-analyzer executable:
+
+```bash
+cargo run -p rust-analyzer --bin rust-analyzer -- \
+  aeneas-llbc /path/to/crate \
+  --output /absolute/or/relative/output.llbc
+```
+
+The command accepts a Cargo project directory, a `Cargo.toml`, or an individual
+`.rs` file. Cargo projects are compiled through Charon's Cargo/rustc-wrapper
+path; individual Rust files are compiled through Charon's rustc-driver path.
+
+rust-analyzer does **not** recreate LLBC from its own HIR or MIR. It invokes the
+exact Charon revision pinned by the Aeneas revision in `toolchain.env`, always
+with `--preset=aeneas --format=json`. This is intentional: it makes the emitted
+file the same serialized Charon contract that Aeneas already consumes, rather
+than a rust-analyzer-specific approximation.
+
+Tool selection is strict:
+
+1. `--charon-bin /path/to/charon` is accepted only when `charon version`
+   reports the pinned Charon commit.
+2. `RA_CHARON` behaves the same way.
+3. A matching `charon` on `PATH` is used automatically.
+4. Otherwise, when Nix is installed, rust-analyzer runs the Charon package from
+   the pinned Aeneas flake revision.
+
+Additional Cargo/rustc arguments may be repeated with `--compiler-arg` and are
+forwarded after Charon's `--` separator.
+
+To verify the producer/consumer boundary end to end without proving anything:
+
+```bash
+bash scripts/formal/check-rust-analyzer-aeneas-contract.sh
+```
+
+That smoke check creates a small Rust crate, emits LLBC through rust-analyzer,
+and asks the pinned Aeneas binary to consume that LLBC with both its Coq/Rocq
+and HOL4 backends. It only tests extraction/translation compatibility.
