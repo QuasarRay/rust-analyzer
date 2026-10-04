@@ -58,6 +58,14 @@ https://rust-lang.zulipchat.com/#narrow/stream/185405-t-compiler.2Frust-analyzer
 * API docs: https://rust-lang.github.io/rust-analyzer/ide/
 * Changelog: https://rust-analyzer.github.io/thisweek
 
+## Formal machine-readable translation
+
+This fork contains a manual, translation-only Charon/Aeneas pipeline under
+[`formal/rust-analyzer-aeneas/`](./formal/rust-analyzer-aeneas/README.md). It
+serializes workspace Rust targets to Charon LLBC JSON and translates those LLBC
+documents with Aeneas to Rocq/Coq and HOL4 source. It does not attempt proofs or
+handwritten model completion.
+
 ## License
 
 rust-analyzer is primarily distributed under the terms of both the MIT

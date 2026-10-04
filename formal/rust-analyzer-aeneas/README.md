@@ -48,7 +48,7 @@ Prerequisites: `bash`, `cargo`, `git`, `jq`, `sha256sum`, and a Charon
 binary compatible with the pinned Aeneas revision.
 
 ```bash
-CHARON_BIN=/path/to/charon scripts/formal/charon-e2e.sh
+CHARON_BIN=/path/to/charon bash scripts/formal/charon-e2e.sh
 ```
 
 The script uses a fresh Cargo target directory for each target so rustc actually
@@ -59,3 +59,46 @@ The source inventory includes every tracked `*.rs` file. Cargo
 `custom-build` targets are recorded in the manifest but are not invoked as
 standalone targets because Cargo has no standalone `--build-script` selector;
 they are compiled as part of the owning package when applicable.
+
+## Aeneas translation
+
+After Charon extraction, translate every successfully generated LLBC document
+with Aeneas's existing `coq` and `hol4` backends:
+
+```bash
+AENEAS_BIN=/path/to/aeneas bash scripts/formal/aeneas-e2e.sh
+```
+
+Or run both stages while preserving partial results from each stage:
+
+```bash
+CHARON_BIN=/path/to/charon \
+AENEAS_BIN=/path/to/aeneas \
+bash scripts/formal/generate-e2e.sh
+```
+
+Aeneas still names its Rocq-compatible backend `coq`; this pipeline keeps that
+upstream backend name and stores its generated `.v` source under `generated/coq/`.
+No Rocq or HOL4 checker is invoked.
+
+Each sweep attempts every available unit and backend. Unsupported Rust features
+or extraction failures are recorded in JSON manifests and per-unit logs rather
+than being repaired with new models or proofs.
+
+## Manual GitHub pipeline
+
+The workflow `.github/workflows/formal-translation.yml` has only a
+`workflow_dispatch` trigger. Dispatch it on the branch that should receive the
+generated documentation, for example:
+
+```bash
+gh workflow run formal-translation.yml --ref <branch>
+```
+
+The workflow reads `toolchain.env`, runs the pinned Aeneas revision and its
+matching Charon through Nix, executes the E2E translation, and commits
+`generated/` back to the same branch. If some targets cannot be translated, it
+still commits the partial LLBC/Rocq/HOL4 outputs, manifests, and logs before
+reporting a failed workflow result.
+
+The workflow itself is not triggered by pushes or pull requests.
